@@ -1,4 +1,4 @@
-# Moneyball Phil — ATS & Totals App (Final Stable v3.1)
+# Moneyball Phil — ATS & Totals App (Final Stable v3.2 — Auto Volatility)
 # Sports: MLB, NFL, NBA, NCAA Football, NCAA Basketball
 
 import streamlit as st
@@ -89,6 +89,17 @@ def get_sport_sigmas(sport: str):
     if sport == "NBA": return 15.0, 12.0
     if sport == "NCAA Basketball": return 18.0, 14.0
     return 12.0, 10.0
+
+def suggested_volatility(sport: str) -> float:
+    # Default SD tweak by sport
+    mapping = {
+        "NFL": 10.0,
+        "NCAA Football": 12.0,
+        "NBA": 12.0,
+        "NCAA Basketball": 15.0,
+        "MLB": 8.0,
+    }
+    return mapping.get(sport, 10.0)
 
 # ---------------- Baseline Model ----------------
 def project_scores_base(sport: str, H_pf: float, H_pa: float, A_pf: float, A_pa: float):
@@ -248,8 +259,11 @@ with col_inputs:
                 form_A_pct = st.number_input("Away form (±% PF)", value=0.0, step=1.0, format="%.0f")
                 injury_A_pct = st.number_input("Away injuries (±% PF)", value=0.0, step=1.0, format="%.0f")
             with u3:
+                # NEW: auto volatility toggle + manual number; we’ll resolve to effective value when running
+                auto_volatility = st.checkbox("Auto volatility by sport", value=True)
                 pace_pct_global = st.number_input("Global pace (±% total)", value=0.0, step=1.0, format="%.0f")
-                variance_pct = st.number_input("Volatility tweak (±% SD)", value=0.0, step=5.0, format="%.0f")
+                variance_pct_manual = st.number_input("Volatility tweak (±% SD)", value=0.0, step=5.0, format="%.0f",
+                                                      help="Ignored when 'Auto volatility by sport' is ON")
 
             # Football
             if sport in ["NFL", "NCAA Football"]:
@@ -325,12 +339,15 @@ with col_results:
         # Baseline model
         home_pts, away_pts = project_scores_base(sport, S.home_pf, S.home_pa, S.away_pf, S.away_pa)
 
-        # Apply adjustments (wired to inputs)
+        # Resolve effective volatility
+        auto_vol_used = suggested_volatility(sport) if auto_volatility else float(variance_pct_manual)
+
+        # Apply adjustments
         home_pts, away_pts, sd_total, sd_margin = apply_adjustments(
             sport, home_pts, away_pts,
             # universal
             home_edge_pts, away_edge_pts, form_H_pct, form_A_pct,
-            injury_H_pct, injury_A_pct, pace_pct_global, variance_pct,
+            injury_H_pct, injury_A_pct, pace_pct_global, auto_vol_used,
             # football
             plays_pct, redzone_H_pct, redzone_A_pct, to_margin_pts,
             # basketball
@@ -375,6 +392,8 @@ with col_results:
         st.session_state.proj_margin = proj_margin
         st.session_state.proj_home_pts = home_pts
         st.session_state.proj_away_pts = away_pts
+        st.session_state.auto_vol_used = auto_vol_used
+        st.session_state.auto_vol_mode = bool(auto_volatility)
 
     # Show results if available
     if st.session_state.results_df is not None:
@@ -383,6 +402,8 @@ with col_results:
         proj_margin = st.session_state.proj_margin
         home_pts = st.session_state.proj_home_pts
         away_pts = st.session_state.proj_away_pts
+        auto_vol_used = st.session_state.get("auto_vol_used", None)
+        auto_vol_mode = st.session_state.get("auto_vol_mode", False)
         S = st.session_state
 
         # Projection summary (favorite label fixed)
@@ -390,6 +411,9 @@ with col_results:
         st.write(f"**{S.home} (Home)**: {home_pts:.1f} — **{S.away} (Away)**: {away_pts:.1f}")
         fav_team = S.home if proj_margin > 0 else S.away
         st.write(f"**Projected Spread**: {fav_team} -{abs(proj_margin):.1f} | **Projected Total**: {proj_total:.1f}")
+        if auto_vol_used is not None:
+            mode_txt = "Auto" if auto_vol_mode else "Manual"
+            st.caption(f"Volatility applied: **{mode_txt} {auto_vol_used:.0f}%** (affects standard deviation only)")
 
         # Results table
         st.subheader("Bet Results")
@@ -442,29 +466,58 @@ st.subheader("🧾 Parlay Slip")
 if len(st.session_state.parlay_slip) == 0:
     st.info("No legs yet. Run a projection, select a bet, and choose **Send to Parlay Slip**.")
 else:
+    # Render current slip
     slip_df = pd.DataFrame(
         st.session_state.parlay_slip,
         columns=["Bet Type", "Odds", "True %", "Implied %", "EV %", "Tier"]
     )
     st.dataframe(slip_df, use_container_width=True)
 
-    # Combined metrics
+    # --- Manual odds editor ---
+    with st.expander("✏️ Edit odds for legs (manual)", expanded=False):
+        st.caption("Adjust American odds for any leg below, then click **Apply changes**.")
+        new_odds_values = []
+        for i, row in enumerate(st.session_state.parlay_slip):
+            leg_label = row[0]
+            current_odds = int(row[1])
+            cols = st.columns([3, 1.2])
+            with cols[0]:
+                st.markdown(f"**{i+1}. {leg_label}**")
+            with cols[1]:
+                new_odds = st.number_input(
+                    "American odds",
+                    value=current_odds,
+                    step=1,
+                    key=f"parlay_edit_odds_{i}"
+                )
+            new_odds_values.append(int(new_odds))
+
+        if st.button("Apply odds changes", key="apply_parlay_odds"):
+            for i in range(len(st.session_state.parlay_slip)):
+                st.session_state.parlay_slip[i][1] = int(new_odds_values[i])
+            st.success("Parlay odds updated.")
+            st.experimental_rerun()
+
+    # --- Combined metrics (use possibly-edited odds) ---
+    def american_to_decimal(odds: float) -> float:
+        return 1 + (odds / 100) if odds > 0 else 1 + (100 / abs(odds))
+
     dec_product = 1.0
     true_prod = 1.0
     implied_prod = 1.0
-    for _, r in slip_df.iterrows():
-        dec = american_to_decimal(int(r["Odds"]))
-        dec_product *= dec
-        true_prod *= (float(r["True %"]) / 100.0)
-        implied_prod *= (float(r["Implied %"]) / 100.0)
+    for leg in st.session_state.parlay_slip:
+        leg_odds = int(leg[1])  # use updated odds if edited
+        dec_product *= american_to_decimal(leg_odds)
+        true_prod *= float(leg[2]) / 100.0
+        implied_prod *= float(leg[3]) / 100.0
 
     combined_true_pct = true_prod * 100.0
     combined_implied_pct = implied_prod * 100.0
     combined_ev_pct = combined_true_pct - combined_implied_pct
-    american = (dec_product - 1) * 100 if dec_product >= 2 else -100 / (dec_product - 1)
+    american_total = (dec_product - 1) * 100 if dec_product >= 2 else -100 / (dec_product - 1)
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Combined Odds (American)", f"{american:.0f}")
+    c1.metric("Combined Odds (American)", f"{american_total:.0f}")
     c2.metric("Combined Odds (Decimal)", f"{dec_product:.2f}")
     c3.metric("True Probability", f"{combined_true_pct:.1f}%")
     c4.metric("EV%", f"{combined_ev_pct:.1f}%")
@@ -475,7 +528,7 @@ else:
     simple_bar("Parlay True Probability", combined_true_pct)
 
     # Manage slip
-    rm_leg = st.selectbox("Remove a leg (optional):", options=["—"] + list(slip_df["Bet Type"]))
+    rm_leg = st.selectbox("Remove a leg (optional):", options=["—"] + [r[0] for r in st.session_state.parlay_slip])
     if rm_leg != "—":
         st.session_state.parlay_slip = [leg for leg in st.session_state.parlay_slip if leg[0] != rm_leg]
         st.experimental_rerun()
