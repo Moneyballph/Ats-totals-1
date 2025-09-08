@@ -228,7 +228,9 @@ with col_inputs:
                 step=0.01, format="%.2f", value=float(st.session_state.spread_line_home)
             )
         with s2:
-            st.caption(f"Away Spread (auto): {(-st.session_state.spread_line_home):+.2f}")
+    away_val = -st.session_state.spread_line_home
+    st.caption(f"Away Spread (auto): {away_val:+.2f}")
+
 
         so1, so2 = st.columns(2)
         with so1:
