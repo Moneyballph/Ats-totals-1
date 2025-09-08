@@ -403,10 +403,19 @@ with col_results:
         away_pts = st.session_state.proj_away_pts
         S = st.session_state
 
-        # >>> Always show projection summary <<<
+            # >>> Always show projection summary <<<
         st.subheader("Projected Game Outcome")
         st.write(f"**{S.home} (Home)**: {home_pts:.1f} — **{S.away} (Away)**: {away_pts:.1f}")
-        st.write(f"**Projected Spread**: {S.home} {proj_margin:+.1f}  |  **Projected Total**: {proj_total:.1f}")
+
+        # Pick the correct favorite for the label
+        spread_abs = abs(proj_margin)  # proj_margin = home - away
+        fav_team = S.home if proj_margin > 0 else S.away
+        spread_label = f"{fav_team} -{spread_abs:.1f}"
+
+        st.write(f"**Projected Spread**: {spread_label}  |  **Projected Total**: {proj_total:.1f}")
+
+st.write(f"**Projected Spread**: {spread_label}  |  **Projected Total**: {proj_total:.1f}")
+
 
         st.subheader("Bet Results")
         st.dataframe(df, use_container_width=True)
