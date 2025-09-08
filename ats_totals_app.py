@@ -318,10 +318,23 @@ with col_inputs:
             else:
                 pace_pct_hoops = ortg_H_pct = ortg_A_pct = drtg_H_pct = drtg_A_pct = rest_H_pct = rest_A_pct = 0.0
 
-            # MLB
+                       # MLB
             if sport == "MLB":
                 st.markdown("**MLB specifics**")
-                m1, m2, m3 =
+                m1, m2, m3 = st.columns(3)
+                with m1:
+                    sp_H_runs = st.number_input("SP impact (Home, runs)", value=0.0, step=0.1, format="%.1f")
+                    bullpen_H_runs = st.number_input("Bullpen (Home, runs)", value=0.0, step=0.1, format="%.1f")
+                with m2:
+                    sp_A_runs = st.number_input("SP impact (Away, runs)", value=0.0, step=0.1, format="%.1f")
+                    bullpen_A_runs = st.number_input("Bullpen (Away, runs)", value=0.0, step=0.1, format="%.1f")
+                with m3:
+                    park_total_pct = st.number_input("Park factor (±% total)", value=0.0, step=1.0, format="%.0f")
+                    weather_total_pct = st.number_input("Weather (±% total)", value=0.0, step=1.0, format="%.0f")
+            else:
+                sp_H_runs = sp_A_runs = bullpen_H_runs = bullpen_A_runs = 0.0
+                park_total_pct = weather_total_pct = 0.0
+
 
 
 
