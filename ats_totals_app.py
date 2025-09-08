@@ -466,76 +466,81 @@ st.subheader("🧾 Parlay Slip")
 if len(st.session_state.parlay_slip) == 0:
     st.info("No legs yet. Run a projection, select a bet, and choose **Send to Parlay Slip**.")
 else:
-    # Render current slip
     slip_df = pd.DataFrame(
         st.session_state.parlay_slip,
         columns=["Bet Type", "Odds", "True %", "Implied %", "EV %", "Tier"]
     )
     st.dataframe(slip_df, use_container_width=True)
 
-    # --- Manual odds editor ---
-    with st.expander("✏️ Edit odds for legs (manual)", expanded=False):
-        st.caption("Adjust American odds for any leg below, then click **Apply changes**.")
-        new_odds_values = []
-        for i, row in enumerate(st.session_state.parlay_slip):
-            leg_label = row[0]
-            current_odds = int(row[1])
-            cols = st.columns([3, 1.2])
-            with cols[0]:
-                st.markdown(f"**{i+1}. {leg_label}**")
-            with cols[1]:
-                new_odds = st.number_input(
-                    "American odds",
-                    value=current_odds,
-                    step=1,
-                    key=f"parlay_edit_odds_{i}"
-                )
-            new_odds_values.append(int(new_odds))
-
-        if st.button("Apply odds changes", key="apply_parlay_odds"):
-            for i in range(len(st.session_state.parlay_slip)):
-                st.session_state.parlay_slip[i][1] = int(new_odds_values[i])
-            st.success("Parlay odds updated.")
-            st.experimental_rerun()
-
-    # --- Combined metrics (use possibly-edited odds) ---
+    # --- Combined metrics from legs (auto) ---
     def american_to_decimal(odds: float) -> float:
         return 1 + (odds / 100) if odds > 0 else 1 + (100 / abs(odds))
+
+    def american_to_implied_pct(odds: float) -> float:
+        return (100 / (odds + 100)) * 100 if odds > 0 else (abs(odds) / (abs(odds) + 100)) * 100
 
     dec_product = 1.0
     true_prod = 1.0
     implied_prod = 1.0
     for leg in st.session_state.parlay_slip:
-        leg_odds = int(leg[1])  # use updated odds if edited
+        leg_odds = int(leg[1])
         dec_product *= american_to_decimal(leg_odds)
         true_prod *= float(leg[2]) / 100.0
         implied_prod *= float(leg[3]) / 100.0
 
     combined_true_pct = true_prod * 100.0
-    combined_implied_pct = implied_prod * 100.0
-    combined_ev_pct = combined_true_pct - combined_implied_pct
-    american_total = (dec_product - 1) * 100 if dec_product >= 2 else -100 / (dec_product - 1)
+    combined_implied_pct = implied_prod * 100.0  # from legs’ implied %
+    auto_american = (dec_product - 1) * 100 if dec_product >= 2 else -100 / (dec_product - 1)
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Combined Odds (American)", f"{american_total:.0f}")
-    c2.metric("Combined Odds (Decimal)", f"{dec_product:.2f}")
-    c3.metric("True Probability", f"{combined_true_pct:.1f}%")
-    c4.metric("EV%", f"{combined_ev_pct:.1f}%")
+    c1.metric("Auto Combined Odds (American)", f"{auto_american:.0f}")
+    c2.metric("Auto Combined Odds (Decimal)", f"{dec_product:.2f}")
+    c3.metric("Parlay True Probability", f"{combined_true_pct:.1f}%")
+    c4.metric("Legs’ Implied Probability", f"{combined_implied_pct:.1f}%")
 
+    # Tier from true probability (unchanged)
     tier_name, tier_color = tier_by_true_prob(combined_true_pct)
     st.markdown(tier_badge_html(f"Parlay Tier: {tier_name}", tier_color), unsafe_allow_html=True)
-    simple_bar("Parlay Implied Probability", combined_implied_pct)
     simple_bar("Parlay True Probability", combined_true_pct)
 
-    # Manage slip
+    # --- Manual book parlay odds override ---
+    st.markdown("### Book Parlay Odds (optional)")
+    colA, colB, colC = st.columns([1.2, 1.2, 2])
+    with colA:
+        manual_parlay_odds = st.number_input(
+            "Book Parlay Odds (American)",
+            value=0, step=1, help="Enter the sportsbook's parlay price (e.g., +650 or -120). Leave 0 to ignore."
+        )
+    with colB:
+        if manual_parlay_odds != 0:
+            manual_parlay_dec = american_to_decimal(manual_parlay_odds)
+            st.metric("Book Parlay Odds (Decimal)", f"{manual_parlay_dec:.2f}")
+        else:
+            st.write(" ")
+
+    # Compute EV vs *book* only if a manual odds is provided
+    if manual_parlay_odds != 0:
+        book_implied_pct = american_to_implied_pct(manual_parlay_odds)
+        ev_vs_book = combined_true_pct - book_implied_pct
+
+        with colC:
+            st.metric("Book Implied Probability", f"{book_implied_pct:.1f}%")
+        simple_bar("EV% vs Book", ev_vs_book)
+        st.caption("EV% vs Book = True Parlay % − Book Implied %")
+    else:
+        st.caption("Enter Book Parlay Odds above to compute EV vs. book price.")
+
+    # --- Manage slip ---
+    st.markdown("### Manage Parlay")
     rm_leg = st.selectbox("Remove a leg (optional):", options=["—"] + [r[0] for r in st.session_state.parlay_slip])
     if rm_leg != "—":
         st.session_state.parlay_slip = [leg for leg in st.session_state.parlay_slip if leg[0] != rm_leg]
-        st.experimental_rerun()
+        st.success(f"Removed: {rm_leg}")
 
     if st.button("Clear Parlay Slip"):
         st.session_state.parlay_slip = []
-        st.experimental_rerun()
+        st.success("Parlay slip cleared.")
+
 
 
 
