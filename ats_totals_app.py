@@ -403,7 +403,7 @@ with col_results:
         away_pts = st.session_state.proj_away_pts
         S = st.session_state
 
-            # >>> Always show projection summary <<<
+                # >>> Always show projection summary <<<
         st.subheader("Projected Game Outcome")
         st.write(f"**{S.home} (Home)**: {home_pts:.1f} — **{S.away} (Away)**: {away_pts:.1f}")
 
@@ -414,10 +414,8 @@ with col_results:
 
         st.write(f"**Projected Spread**: {spread_label}  |  **Projected Total**: {proj_total:.1f}")
 
-st.write(f"**Projected Spread**: {spread_label}  |  **Projected Total**: {proj_total:.1f}")
-
-
         st.subheader("Bet Results")
+ 
         st.dataframe(df, use_container_width=True)
 
         # Keep selection stable
