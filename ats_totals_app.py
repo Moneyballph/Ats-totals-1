@@ -280,9 +280,14 @@ with col_results:
             save_straight = st.button("💾 Save Straight Bet", key="save_straight_btn")
         with colB:
             add_parlay = st.button("➕ Send to Parlay Slip", key="add_parlay_btn")
-        if save_straight:
-            st.success("✅ Bet saved (copy row below to your tracker).")
-            st.code(f
+       if save_straight:
+    st.success("✅ Bet saved (copy row below to your tracker).")
+    st.code(
+        f"{datetime.date.today()}, Straight, {selected['Bet Type']}, "
+        f"{int(selected['Odds'])}, {selected['True %']:.1f}%, {selected['Implied %']:.1f}%, "
+        f"{st.session_state.stake:.2f}, W/L, +/-$, {selected['EV %']:.1f}%, Cumulative, ROI%"
+    )
+
 
 
 
