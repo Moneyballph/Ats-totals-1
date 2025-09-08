@@ -277,16 +277,38 @@ with col_results:
         simple_bar("EV%", selected["EV %"])
         colA, colB = st.columns(2)
         with colA:
+                # Compact details (badge + bars)
+        st.markdown("### Bet Details")
+        tier_name, tier_color = tier_by_true_prob(float(selected["True %"]))
+        st.markdown(tier_badge_html(tier_name, tier_color), unsafe_allow_html=True)
+        simple_bar("True Probability", selected["True %"])
+        simple_bar("Implied Probability", selected["Implied %"])
+        simple_bar("EV%", selected["EV %"])
+
+        colA, colB = st.columns(2)
+        with colA:
             save_straight = st.button("💾 Save Straight Bet", key="save_straight_btn")
         with colB:
             add_parlay = st.button("➕ Send to Parlay Slip", key="add_parlay_btn")
-       if save_straight:
-    st.success("✅ Bet saved (copy row below to your tracker).")
-    st.code(
-        f"{datetime.date.today()}, Straight, {selected['Bet Type']}, "
-        f"{int(selected['Odds'])}, {selected['True %']:.1f}%, {selected['Implied %']:.1f}%, "
-        f"{st.session_state.stake:.2f}, W/L, +/-$, {selected['EV %']:.1f}%, Cumulative, ROI%"
-    )
+
+        if save_straight:
+            st.success("✅ Bet saved (copy row below to your tracker).")
+            st.code(
+                f"{datetime.date.today()}, Straight, {selected['Bet Type']}, "
+                f"{int(selected['Odds'])}, {selected['True %']:.1f}%, {selected['Implied %']:.1f}%, "
+                f"{st.session_state.stake:.2f}, W/L, +/-$, {selected['EV %']:.1f}%, Cumulative, ROI%"
+            )
+
+        if add_parlay:
+            st.session_state.parlay_slip.append([
+                selected["Bet Type"],
+                int(selected["Odds"]),
+                float(selected["True %"]),
+                float(selected["Implied %"]),
+                float(selected["EV %"]),
+                tier_name
+            ])
+            st.success(f"➕ Added to parlay slip: {selected['Bet Type']}")
 
 
 
