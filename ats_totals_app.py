@@ -1,4 +1,4 @@
-# Moneyball Phil — ATS & Totals App (v2.2 Home/Away, forms + persistent results)
+# Moneyball Phil — ATS & Totals App (v2.3 Home/Away, forms + persistent results + always show projections)
 # Sports: MLB, NFL, NBA, NCAA Football, NCAA Basketball
 
 import streamlit as st
@@ -333,9 +333,6 @@ with col_inputs:
 with col_results:
     st.header("📊 Results")
 
-    # If we have saved results and didn't submit, show them
-    has_saved = st.session_state.results_df is not None
-
     if run_projection:
         S = st.session_state
 
@@ -360,11 +357,6 @@ with col_results:
 
         proj_total = home_pts + away_pts
         proj_margin = home_pts - away_pts  # Home - Away
-
-        st.subheader("Projected Game Outcome")
-        st.write(f"**{S.home} (Home)**: {home_pts:.1f} — **{S.away} (Away)**: {away_pts:.1f}")
-        st.write(f"**Projected Spread**: {S.home} {proj_margin:+.1f}")
-        st.write(f"**Projected Total**: {proj_total:.1f}")
 
         # Probabilities
         rows = []
@@ -395,20 +387,26 @@ with col_results:
         rows.append([f"Under {S.total_line:.2f}", S.under_odds, true_under, impl_under, ev_under, tier_under])
 
         df = pd.DataFrame(rows, columns=["Bet Type", "Odds", "True %", "Implied %", "EV %", "Tier"])
-        # Persist results
+        # Persist results for stable view across interactions
         st.session_state.results_df = df
         st.session_state.proj_total = proj_total
         st.session_state.proj_margin = proj_margin
         st.session_state.proj_home_pts = home_pts
         st.session_state.proj_away_pts = away_pts
 
-    # Show results if we have them
+    # ---------- Display saved results (and projections) if available ----------
     if st.session_state.results_df is not None:
         df = st.session_state.results_df
         proj_total = st.session_state.proj_total
         proj_margin = st.session_state.proj_margin
         home_pts = st.session_state.proj_home_pts
         away_pts = st.session_state.proj_away_pts
+        S = st.session_state
+
+        # >>> Always show projection summary <<<
+        st.subheader("Projected Game Outcome")
+        st.write(f"**{S.home} (Home)**: {home_pts:.1f} — **{S.away} (Away)**: {away_pts:.1f}")
+        st.write(f"**Projected Spread**: {S.home} {proj_margin:+.1f}  |  **Projected Total**: {proj_total:.1f}")
 
         st.subheader("Bet Results")
         st.dataframe(df, use_container_width=True)
