@@ -312,12 +312,17 @@ with col_inputs:
                 sp_H_runs = sp_A_runs = bullpen_H_runs = bullpen_A_runs = 0.0
                 park_total_pct = weather_total_pct = 0.0
 
-        # Submit buttons
-        cbtn1, cbtn2 = st.columns(2)
-        with cbtn1:
-            reset_clicked = st.form_submit_button("Reset Inputs")
-        with cbtn2:
-            run_projection = st.form_submit_button("🔮 Run Projection")
+           # ---------- Advanced (optional) ----------
+    with st.expander("⚙️ Advanced adjustments (optional)", expanded=False):
+        # ... all your advanced inputs here ...
+
+    # ✅ FIX: Buttons must be inside the form
+    cbtn1, cbtn2 = st.columns(2)
+    with cbtn1:
+        reset_clicked = st.form_submit_button("Reset Inputs")
+    with cbtn2:
+        run_projection = st.form_submit_button("🔮 Run Projection")
+
 
     if reset_clicked:
         for key in ["home","away","home_pf","home_pa","away_pf","away_pa",
