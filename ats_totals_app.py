@@ -1,5 +1,5 @@
-# Moneyball Phil — ATS & Totals App (v2.5 Home/Away)
-# Spreads back INSIDE the form; Away spread auto-mirrors Home (read-only).
+# Moneyball Phil — ATS & Totals App (v2.6 Home/Away)
+# Spreads INSIDE the form; Away spread auto-mirrors Home (read-only, state-safe).
 # Sports: MLB, NFL, NBA, NCAA Football, NCAA Basketball
 
 import streamlit as st
@@ -25,6 +25,8 @@ def init_state():
         "spread_odds_away": -110.0,
         "total_line": 0.0, "over_odds": -110.0, "under_odds": -110.0,
         "stake": 0.0,
+        # mirrored display key
+        "spread_line_away_display": 0.0,
         # persisted results
         "selected_bet": None,
         "results_df": None,
@@ -179,7 +181,7 @@ sport = st.selectbox("Select Sport", ["MLB", "NFL", "NBA", "NCAA Football", "NCA
 if st.session_state.get("last_sport") != sport:
     for key in ["home","away","home_pf","home_pa","away_pf","away_pa",
                 "spread_line_home","spread_odds_home","spread_odds_away",
-                "total_line","over_odds","under_odds","stake"]:
+                "total_line","over_odds","under_odds","stake", "spread_line_away_display"]:
         st.session_state[key] = type(st.session_state[key])() if isinstance(st.session_state[key], str) else 0.0
     st.session_state["selected_bet"] = None
     st.session_state["last_sport"] = sport
@@ -215,14 +217,14 @@ with col_inputs:
         with s1:
             st.session_state.spread_line_home = st.number_input(
                 "Home Spread (enter negative if favorite)",
-                step=0.01, format="%.2f", value=float(st.session_state.spread_line_home)
+                step=0.01, format="%.2f", value=float(st.session_state.spread_line_home),
+                key="spread_line_home"
             )
         with s2:
-            # Mirror the Home value; show as read-only so it's clear it's derived
-            away_val = -float(st.session_state.spread_line_home)
+            # *** FIX: update session_state BEFORE rendering disabled field ***
+            st.session_state.spread_line_away_display = -float(st.session_state.spread_line_home)
             st.number_input(
                 "Away Spread (auto)",
-                value=away_val,
                 step=0.01,
                 format="%.2f",
                 disabled=True,
@@ -320,7 +322,7 @@ with col_inputs:
     if reset_clicked:
         for key in ["home","away","home_pf","home_pa","away_pf","away_pa",
                     "spread_line_home","spread_odds_home","spread_odds_away",
-                    "total_line","over_odds","under_odds","stake"]:
+                    "total_line","over_odds","under_odds","stake", "spread_line_away_display"]:
             st.session_state[key] = type(st.session_state[key])() if isinstance(st.session_state[key], str) else 0.0
         st.session_state.selected_bet = None
         st.stop()
@@ -401,7 +403,7 @@ with col_results:
         if st.session_state.selected_bet is None and len(df) > 0:
             st.session_state.selected_bet = df["Bet Type"].iloc[0]
 
-        choice = st.selectbox(
+        st.selectbox(
             "Select a bet to save/add to slip:",
             options=list(df["Bet Type"]),
             key="selected_bet"
