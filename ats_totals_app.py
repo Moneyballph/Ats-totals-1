@@ -1,5 +1,6 @@
-# Moneyball Phil — ATS & Totals App (v2.4 Home/Away)
-# Live-mirror Away spread; rest of inputs stay in a form to avoid auto-reruns.
+# Moneyball Phil — ATS & Totals App (v2.5 Home/Away)
+# Spreads back INSIDE the form; Away spread auto-mirrors Home (read-only).
+# Sports: MLB, NFL, NBA, NCAA Football, NCAA Basketball
 
 import streamlit as st
 import pandas as pd
@@ -19,7 +20,7 @@ def init_state():
         "home": "", "away": "",
         "home_pf": 0.0, "home_pa": 0.0,
         "away_pf": 0.0, "away_pa": 0.0,
-        "spread_line_home": 0.0,     # Home side; Away mirrors live
+        "spread_line_home": 0.0,     # Home line; Away mirrors
         "spread_odds_home": -110.0,
         "spread_odds_away": -110.0,
         "total_line": 0.0, "over_odds": -110.0, "under_odds": -110.0,
@@ -189,19 +190,7 @@ col_inputs, col_results = st.columns([1, 2])
 with col_inputs:
     st.header("📥 Inputs")
 
-    # ---- Live Spread Entry (OUTSIDE the form; mirrors Away instantly) ----
-    st.caption("**Live Spread Entry** (Away mirrors automatically)")
-    live1, live2 = st.columns(2)
-    with live1:
-        st.number_input(
-            "Home Spread (enter negative if favorite)",
-            step=0.01, format="%.2f",
-            key="spread_line_home"
-        )
-    with live2:
-        st.markdown(f"**Away Spread (auto):** {(-st.session_state.spread_line_home):+.2f}")
-
-    # ---- All other inputs inside a FORM to prevent auto-reruns ----
+    # All inputs in a FORM (Away spread mirrors Home on submit)
     with st.form("inputs_form", clear_on_submit=False):
         # Row 1: Teams
         n1, n2 = st.columns(2)
@@ -221,7 +210,26 @@ with col_inputs:
             st.session_state.away_pf = st.number_input("Away: Avg Scored", step=0.01, format="%.2f", value=float(st.session_state.away_pf))
             st.session_state.away_pa = st.number_input("Away: Avg Allowed", step=0.01, format="%.2f", value=float(st.session_state.away_pa))
 
-        # Row 3: Spread odds per side
+        # Row 3: Spread (Home entry + mirrored Away inside the form)
+        s1, s2 = st.columns(2)
+        with s1:
+            st.session_state.spread_line_home = st.number_input(
+                "Home Spread (enter negative if favorite)",
+                step=0.01, format="%.2f", value=float(st.session_state.spread_line_home)
+            )
+        with s2:
+            # Mirror the Home value; show as read-only so it's clear it's derived
+            away_val = -float(st.session_state.spread_line_home)
+            st.number_input(
+                "Away Spread (auto)",
+                value=away_val,
+                step=0.01,
+                format="%.2f",
+                disabled=True,
+                key="spread_line_away_display"
+            )
+
+        # Row 4: Spread odds per side
         so1, so2 = st.columns(2)
         with so1:
             st.session_state.spread_odds_home = st.number_input(
@@ -232,7 +240,7 @@ with col_inputs:
                 "Away Spread Odds (American)", step=1.0, format="%.0f", value=float(st.session_state.spread_odds_away)
             )
 
-        # Row 4: Total + O/U odds + stake
+        # Row 5: Total + O/U odds + stake
         t_row1, t_row2 = st.columns(2)
         with t_row1:
             st.session_state.total_line = st.number_input("Total Line (e.g., 218.5)", step=0.01, format="%.2f", value=float(st.session_state.total_line))
