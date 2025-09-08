@@ -1,5 +1,4 @@
-# Moneyball Phil — ATS & Totals App (v2.6 Home/Away)
-# Spreads INSIDE the form; Away spread auto-mirrors Home (read-only, state-safe).
+# Moneyball Phil — ATS & Totals App (v2.3 Home/Away, forms + persistent results + always show projections)
 # Sports: MLB, NFL, NBA, NCAA Football, NCAA Basketball
 
 import streamlit as st
@@ -20,14 +19,12 @@ def init_state():
         "home": "", "away": "",
         "home_pf": 0.0, "home_pa": 0.0,
         "away_pf": 0.0, "away_pa": 0.0,
-        "spread_line_home": 0.0,     # Home line; Away mirrors
+        "spread_line_home": 0.0,     # enter home line; away mirrors
         "spread_odds_home": -110.0,
         "spread_odds_away": -110.0,
         "total_line": 0.0, "over_odds": -110.0, "under_odds": -110.0,
         "stake": 0.0,
-        # mirrored display key
-        "spread_line_away_display": 0.0,
-        # persisted results
+        # selection & persisted results
         "selected_bet": None,
         "results_df": None,
         "proj_total": None,
@@ -53,13 +50,14 @@ def calculate_ev_pct(true_prob_pct: float, odds: float) -> tuple[float, float]:
     return (true_prob_pct - implied), implied
 
 def tier_by_true_prob(true_prob_pct: float) -> tuple[str, str]:
+    # Return (name, hex color)
     if true_prob_pct >= 80:
-        return "Elite", "#16a34a"
+        return "Elite", "#16a34a"   # green-600
     if true_prob_pct >= 65:
-        return "Strong", "#2563eb"
+        return "Strong", "#2563eb"  # blue-600
     if true_prob_pct >= 50:
-        return "Moderate", "#f59e0b"
-    return "Risky", "#dc2626"
+        return "Moderate", "#f59e0b" # amber-500
+    return "Risky", "#dc2626"       # red-600
 
 def tier_badge_html(tier_name: str, color: str) -> str:
     return (
@@ -86,11 +84,16 @@ def _std_norm_cdf(x: float) -> float:
     return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
 
 def get_sport_sigmas(sport: str) -> tuple[float, float]:
-    if sport == "MLB":               return 3.5, 3.0
-    if sport == "NFL":               return 10.0, 9.0
-    if sport == "NCAA Football":     return 12.0, 10.0
-    if sport == "NBA":               return 15.0, 12.0
-    if sport == "NCAA Basketball":   return 18.0, 14.0
+    if sport == "MLB":               # runs
+        return 3.5, 3.0
+    if sport == "NFL":               # points
+        return 10.0, 9.0
+    if sport == "NCAA Football":
+        return 12.0, 10.0
+    if sport == "NBA":
+        return 15.0, 12.0
+    if sport == "NCAA Basketball":
+        return 18.0, 14.0
     return 12.0, 10.0
 
 # ---------------- Baseline Model ----------------
@@ -103,14 +106,18 @@ def project_scores_base(sport: str, H_pf: float, H_pa: float, A_pf: float, A_pa:
 def apply_adjustments(
     sport: str,
     H_pts: float, A_pts: float,
+    # universal
     home_edge_pts: float, away_edge_pts: float,
     form_H_pct: float, form_A_pct: float,
     injury_H_pct: float, injury_A_pct: float,
     pace_pct_global: float, variance_pct: float,
+    # NFL / NCAA Football
     plays_pct: float = 0.0, redzone_H_pct: float = 0.0, redzone_A_pct: float = 0.0,
     to_margin_pts: float = 0.0,
+    # NBA / NCAA Basketball
     pace_pct_hoops: float = 0.0, ortg_H_pct: float = 0.0, ortg_A_pct: float = 0.0,
     drtg_H_pct: float = 0.0, drtg_A_pct: float = 0.0, rest_H_pct: float = 0.0, rest_A_pct: float = 0.0,
+    # MLB
     sp_H_runs: float = 0.0, sp_A_runs: float = 0.0, bullpen_H_runs: float = 0.0, bullpen_A_runs: float = 0.0,
     park_total_pct: float = 0.0, weather_total_pct: float = 0.0
 ):
@@ -126,9 +133,9 @@ def apply_adjustments(
     if sport in ["NFL", "NCAA Football"]:
         if plays_pct != 0:
             scale = 1 + plays_pct/100.0
-            tot = H_pts + A_pts
-            if tot > 0:
-                factor = (tot * scale) / tot
+            total_before = H_pts + A_pts
+            if total_before > 0:
+                factor = (total_before * scale) / total_before
                 H_pts *= factor
                 A_pts *= factor
         H_pts *= (1 + redzone_H_pct/100.0)
@@ -140,9 +147,9 @@ def apply_adjustments(
     if sport in ["NBA", "NCAA Basketball"]:
         if pace_pct_hoops != 0:
             scale = 1 + pace_pct_hoops/100.0
-            tot = H_pts + A_pts
-            if tot > 0:
-                factor = (tot * scale) / tot
+            total_before = H_pts + A_pts
+            if total_before > 0:
+                factor = (total_before * scale) / total_before
                 H_pts *= factor
                 A_pts *= factor
         H_pts *= (1 + (ortg_H_pct - drtg_A_pct)/100.0)
@@ -155,18 +162,18 @@ def apply_adjustments(
         H_pts += sp_H_runs + bullpen_H_runs
         A_pts += sp_A_runs + bullpen_A_runs
         total_scale = (1 + park_total_pct/100.0) * (1 + weather_total_pct/100.0)
-        tot = H_pts + A_pts
-        if tot > 0 and total_scale != 1.0:
-            factor = (tot * total_scale) / tot
+        total_before = H_pts + A_pts
+        if total_before > 0 and total_scale != 1.0:
+            factor = (total_before * total_scale) / total_before
             H_pts *= factor
             A_pts *= factor
 
     # Global pace
     if pace_pct_global != 0:
         scale = 1 + pace_pct_global/100.0
-        tot = H_pts + A_pts
-        if tot > 0:
-            factor = (tot * scale) / tot
+        total_before = H_pts + A_pts
+        if total_before > 0:
+            factor = (total_before * scale) / total_before
             H_pts *= factor
             A_pts *= factor
 
@@ -179,9 +186,10 @@ def apply_adjustments(
 # ---------------- Sport Selector ----------------
 sport = st.selectbox("Select Sport", ["MLB", "NFL", "NBA", "NCAA Football", "NCAA Basketball"])
 if st.session_state.get("last_sport") != sport:
+    # clear inputs on sport change (keep parlay + results)
     for key in ["home","away","home_pf","home_pa","away_pf","away_pa",
                 "spread_line_home","spread_odds_home","spread_odds_away",
-                "total_line","over_odds","under_odds","stake", "spread_line_away_display"]:
+                "total_line","over_odds","under_odds","stake"]:
         st.session_state[key] = type(st.session_state[key])() if isinstance(st.session_state[key], str) else 0.0
     st.session_state["selected_bet"] = None
     st.session_state["last_sport"] = sport
@@ -192,7 +200,7 @@ col_inputs, col_results = st.columns([1, 2])
 with col_inputs:
     st.header("📥 Inputs")
 
-    # All inputs in a FORM (Away spread mirrors Home on submit)
+    # All inputs in a FORM to prevent auto-reruns
     with st.form("inputs_form", clear_on_submit=False):
         # Row 1: Teams
         n1, n2 = st.columns(2)
@@ -212,26 +220,16 @@ with col_inputs:
             st.session_state.away_pf = st.number_input("Away: Avg Scored", step=0.01, format="%.2f", value=float(st.session_state.away_pf))
             st.session_state.away_pa = st.number_input("Away: Avg Allowed", step=0.01, format="%.2f", value=float(st.session_state.away_pa))
 
-        # Row 3: Spread (Home entry + mirrored Away inside the form)
+        # Row 3: Spread + odds
         s1, s2 = st.columns(2)
         with s1:
             st.session_state.spread_line_home = st.number_input(
                 "Home Spread (enter negative if favorite)",
-                step=0.01, format="%.2f", value=float(st.session_state.spread_line_home),
-                key="spread_line_home"
+                step=0.01, format="%.2f", value=float(st.session_state.spread_line_home)
             )
         with s2:
-            # *** FIX: update session_state BEFORE rendering disabled field ***
-            st.session_state.spread_line_away_display = -float(st.session_state.spread_line_home)
-            st.number_input(
-                "Away Spread (auto)",
-                step=0.01,
-                format="%.2f",
-                disabled=True,
-                key="spread_line_away_display"
-            )
+            st.caption(f"Away Spread (auto): {(-st.session_state.spread_line_home):+.2f}")
 
-        # Row 4: Spread odds per side
         so1, so2 = st.columns(2)
         with so1:
             st.session_state.spread_odds_home = st.number_input(
@@ -242,7 +240,7 @@ with col_inputs:
                 "Away Spread Odds (American)", step=1.0, format="%.0f", value=float(st.session_state.spread_odds_away)
             )
 
-        # Row 5: Total + O/U odds + stake
+        # Row 4: Total + O/U odds + stake
         t_row1, t_row2 = st.columns(2)
         with t_row1:
             st.session_state.total_line = st.number_input("Total Line (e.g., 218.5)", step=0.01, format="%.2f", value=float(st.session_state.total_line))
@@ -251,8 +249,9 @@ with col_inputs:
             st.session_state.stake = st.number_input("Stake ($)", min_value=0.0, step=1.0, format="%.2f", value=float(st.session_state.stake))
             st.session_state.under_odds = st.number_input("Under Odds (American)", step=1.0, format="%.0f", value=float(st.session_state.under_odds))
 
-        # ---------- Advanced (optional) ----------
+        # ---------- Advanced (per sport) ----------
         with st.expander("⚙️ Advanced adjustments (optional)", expanded=False):
+            # Universal
             st.markdown("**Universal**")
             u1, u2, u3 = st.columns(3)
             with u1:
@@ -267,6 +266,7 @@ with col_inputs:
                 pace_pct_global = st.number_input("Global pace (±% total)", value=0.0, step=1.0, format="%.0f")
                 variance_pct = st.number_input("Volatility tweak (±% SD)", value=0.0, step=5.0, format="%.0f")
 
+            # Football
             if sport in ["NFL", "NCAA Football"]:
                 st.markdown("**Football specifics**")
                 f1, f2, f3 = st.columns(3)
@@ -280,6 +280,7 @@ with col_inputs:
             else:
                 plays_pct = redzone_H_pct = redzone_A_pct = to_margin_pts = 0.0
 
+            # Basketball
             if sport in ["NBA", "NCAA Basketball"]:
                 st.markdown("**Basketball specifics**")
                 b1, b2, b3 = st.columns(3)
@@ -296,6 +297,7 @@ with col_inputs:
             else:
                 pace_pct_hoops = ortg_H_pct = ortg_A_pct = drtg_H_pct = drtg_A_pct = rest_H_pct = rest_A_pct = 0.0
 
+            # MLB
             if sport == "MLB":
                 st.markdown("**MLB specifics**")
                 m1, m2, m3 = st.columns(3)
@@ -312,47 +314,49 @@ with col_inputs:
                 sp_H_runs = sp_A_runs = bullpen_H_runs = bullpen_A_runs = 0.0
                 park_total_pct = weather_total_pct = 0.0
 
-           # ---------- Advanced (optional) ----------
-    with st.expander("⚙️ Advanced adjustments (optional)", expanded=False):
-        # ... all your advanced inputs here ...
+        # Form submit buttons
+        cbtn1, cbtn2 = st.columns(2)
+        with cbtn1:
+            reset_clicked = st.form_submit_button("Reset Inputs")
+        with cbtn2:
+            run_projection = st.form_submit_button("🔮 Run Projection")
 
-    # ✅ FIX: Buttons must be inside the form
-    cbtn1, cbtn2 = st.columns(2)
-    with cbtn1:
-        reset_clicked = st.form_submit_button("Reset Inputs")
-    with cbtn2:
-        run_projection = st.form_submit_button("🔮 Run Projection")
-
-
+    # Handle reset (outside the form re-run context)
     if reset_clicked:
         for key in ["home","away","home_pf","home_pa","away_pf","away_pa",
                     "spread_line_home","spread_odds_home","spread_odds_away",
-                    "total_line","over_odds","under_odds","stake", "spread_line_away_display"]:
+                    "total_line","over_odds","under_odds","stake"]:
             st.session_state[key] = type(st.session_state[key])() if isinstance(st.session_state[key], str) else 0.0
         st.session_state.selected_bet = None
-        st.stop()
+        st.stop()  # short-circuit; form will render fresh next run
 
 with col_results:
     st.header("📊 Results")
 
     if run_projection:
         S = st.session_state
+
         # Baseline
         home_pts, away_pts = project_scores_base(
             sport, S.home_pf, S.home_pa, S.away_pf, S.away_pa
         )
-        # Adjustments
+
+        # Adjusted
         home_pts, away_pts, sd_total, sd_margin = apply_adjustments(
             sport, home_pts, away_pts,
+            # universal
             home_edge_pts, away_edge_pts, form_H_pct, form_A_pct,
             injury_H_pct, injury_A_pct, pace_pct_global, variance_pct,
+            # football
             plays_pct, redzone_H_pct, redzone_A_pct, to_margin_pts,
+            # hoops
             pace_pct_hoops, ortg_H_pct, ortg_A_pct, drtg_H_pct, drtg_A_pct, rest_H_pct, rest_A_pct,
+            # mlb
             sp_H_runs, sp_A_runs, bullpen_H_runs, bullpen_A_runs, park_total_pct, weather_total_pct
         )
 
         proj_total = home_pts + away_pts
-        proj_margin = home_pts - away_pts
+        proj_margin = home_pts - away_pts  # Home - Away
 
         # Probabilities
         rows = []
@@ -383,13 +387,14 @@ with col_results:
         rows.append([f"Under {S.total_line:.2f}", S.under_odds, true_under, impl_under, ev_under, tier_under])
 
         df = pd.DataFrame(rows, columns=["Bet Type", "Odds", "True %", "Implied %", "EV %", "Tier"])
+        # Persist results for stable view across interactions
         st.session_state.results_df = df
         st.session_state.proj_total = proj_total
         st.session_state.proj_margin = proj_margin
         st.session_state.proj_home_pts = home_pts
         st.session_state.proj_away_pts = away_pts
 
-    # Always display saved results if present
+    # ---------- Display saved results (and projections) if available ----------
     if st.session_state.results_df is not None:
         df = st.session_state.results_df
         proj_total = st.session_state.proj_total
@@ -398,6 +403,7 @@ with col_results:
         away_pts = st.session_state.proj_away_pts
         S = st.session_state
 
+        # >>> Always show projection summary <<<
         st.subheader("Projected Game Outcome")
         st.write(f"**{S.home} (Home)**: {home_pts:.1f} — **{S.away} (Away)**: {away_pts:.1f}")
         st.write(f"**Projected Spread**: {S.home} {proj_margin:+.1f}  |  **Projected Total**: {proj_total:.1f}")
@@ -405,16 +411,18 @@ with col_results:
         st.subheader("Bet Results")
         st.dataframe(df, use_container_width=True)
 
+        # Keep selection stable
         if st.session_state.selected_bet is None and len(df) > 0:
             st.session_state.selected_bet = df["Bet Type"].iloc[0]
 
-        st.selectbox(
+        choice = st.selectbox(
             "Select a bet to save/add to slip:",
             options=list(df["Bet Type"]),
             key="selected_bet"
         )
         selected = df[df["Bet Type"] == st.session_state.selected_bet].iloc[0]
 
+        # Compact details (badge + bars)
         st.markdown("### Bet Details")
         tier_name, tier_color = tier_by_true_prob(float(selected["True %"]))
         st.markdown(tier_badge_html(tier_name, tier_color), unsafe_allow_html=True)
@@ -460,6 +468,7 @@ else:
     )
     st.dataframe(slip_df, use_container_width=True)
 
+    # Combined metrics
     dec_product = 1.0
     true_prod = 1.0
     implied_prod = 1.0
@@ -480,11 +489,13 @@ else:
     c3.metric("True Probability", f"{combined_true_pct:.1f}%")
     c4.metric("EV%", f"{combined_ev_pct:.1f}%")
 
+    # Parlay tier badge + bars
     tier_name, tier_color = tier_by_true_prob(combined_true_pct)
     st.markdown(tier_badge_html(f"Parlay Tier: {tier_name}", tier_color), unsafe_allow_html=True)
     simple_bar("Parlay Implied Probability", combined_implied_pct)
     simple_bar("Parlay True Probability", combined_true_pct)
 
+    # Manage slip
     rm_leg = st.selectbox("Remove a leg (optional):", options=["—"] + list(slip_df["Bet Type"]))
     if rm_leg != "—":
         st.session_state.parlay_slip = [leg for leg in st.session_state.parlay_slip if leg[0] != rm_leg]
@@ -493,6 +504,7 @@ else:
     if st.button("Clear Parlay Slip"):
         st.session_state.parlay_slip = []
         st.experimental_rerun()
+
 
 
 
