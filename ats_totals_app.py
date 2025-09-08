@@ -1,6 +1,5 @@
-# Moneyball Phil — ATS & Totals App (v1.2)
-# Two-column layout + sport-specific probability engine (no placeholders)
-# Sports: MLB, NFL, NBA, NCAA Football, NCAA Basketball
+# Moneyball Phil — ATS & Totals App (v1.3 compact inputs)
+# Two-column layout + sport-specific probability engine + compact input panel
 
 import streamlit as st
 import pandas as pd
@@ -74,7 +73,6 @@ def _std_norm_cdf(x: float) -> float:
 def get_sport_sigmas(sport: str) -> tuple[float, float]:
     """
     Return (sd_total, sd_margin) for the sport.
-    These control how sharp/wide the distributions are.
     Tune later with historical data.
     """
     if sport == "MLB":
@@ -115,39 +113,56 @@ col_inputs, col_results = st.columns([1, 2])
 with col_inputs:
     st.header("📥 Inputs")
 
-    st.session_state.teamA = st.text_input("Team A Name", value=st.session_state.teamA)
-    st.session_state.teamB = st.text_input("Team B Name", value=st.session_state.teamB)
+    # Row 1: Team names side-by-side
+    n1, n2 = st.columns(2)
+    with n1:
+        st.session_state.teamA = st.text_input("Team A", value=st.session_state.teamA)
+    with n2:
+        st.session_state.teamB = st.text_input("Team B", value=st.session_state.teamB)
 
-    st.markdown("**Team A Averages**")
-    st.session_state.teamA_pf = st.number_input("Team A Avg Points Scored", step=0.01, format="%.2f", value=float(st.session_state.teamA_pf))
-    st.session_state.teamA_pa = st.number_input("Team A Avg Points Allowed", step=0.01, format="%.2f", value=float(st.session_state.teamA_pa))
+    # Row 2: Team A (PF/PA) and Team B (PF/PA) side-by-side
+    a_col, b_col = st.columns(2)
+    with a_col:
+        st.caption("**Team A Averages**")
+        st.session_state.teamA_pf = st.number_input("A: Avg Scored", step=0.01, format="%.2f", value=float(st.session_state.teamA_pf))
+        st.session_state.teamA_pa = st.number_input("A: Avg Allowed", step=0.01, format="%.2f", value=float(st.session_state.teamA_pa))
+    with b_col:
+        st.caption("**Team B Averages**")
+        st.session_state.teamB_pf = st.number_input("B: Avg Scored", step=0.01, format="%.2f", value=float(st.session_state.teamB_pf))
+        st.session_state.teamB_pa = st.number_input("B: Avg Allowed", step=0.01, format="%.2f", value=float(st.session_state.teamB_pa))
 
-    st.markdown("**Team B Averages**")
-    st.session_state.teamB_pf = st.number_input("Team B Avg Points Scored", step=0.01, format="%.2f", value=float(st.session_state.teamB_pf))
-    st.session_state.teamB_pa = st.number_input("Team B Avg Points Allowed", step=0.01, format="%.2f", value=float(st.session_state.teamB_pa))
+    # Row 3: Spread line + odds on same row
+    s1, s2 = st.columns(2)
+    with s1:
+        st.session_state.spread_line = st.number_input("Spread Line (e.g., -3.5 / +3.5)", step=0.01, format="%.2f", value=float(st.session_state.spread_line))
+    with s2:
+        st.session_state.spread_odds = st.number_input("Spread Odds (American)", step=1.0, format="%.0f", value=float(st.session_state.spread_odds))
 
-    st.markdown("**Sportsbook Spread**")
-    st.session_state.spread_line = st.number_input("Spread Line (e.g., -3.5 or +3.5)", step=0.01, format="%.2f", value=float(st.session_state.spread_line))
-    st.session_state.spread_odds = st.number_input("Spread Odds (American)", step=1.0, format="%.0f", value=float(st.session_state.spread_odds))
+    # Row 4: Total line + Over/Under odds split across two rows but compact
+    t_row1, t_row2 = st.columns(2)
+    with t_row1:
+        st.session_state.total_line = st.number_input("Total Line (e.g., 218.5)", step=0.01, format="%.2f", value=float(st.session_state.total_line))
+        st.session_state.over_odds = st.number_input("Over Odds (American)", step=1.0, format="%.0f", value=float(st.session_state.over_odds))
+    with t_row2:
+        st.session_state.stake = st.number_input("Stake ($)", min_value=0.0, step=1.0, format="%.2f", value=float(st.session_state.stake))
+        st.session_state.under_odds = st.number_input("Under Odds (American)", step=1.0, format="%.0f", value=float(st.session_state.under_odds))
 
-    st.markdown("**Sportsbook Total**")
-    st.session_state.total_line = st.number_input("Total Line (e.g., 218.5)", step=0.01, format="%.2f", value=float(st.session_state.total_line))
-    st.session_state.over_odds = st.number_input("Over Odds (American)", step=1.0, format="%.0f", value=float(st.session_state.over_odds))
-    st.session_state.under_odds = st.number_input("Under Odds (American)", step=1.0, format="%.0f", value=float(st.session_state.under_odds))
-
-    st.session_state.stake = st.number_input("Stake ($)", min_value=0.0, step=1.0, format="%.2f", value=float(st.session_state.stake))
-
-    # Reset button clears inputs (keeps parlay slip)
-    if st.button("Reset Inputs"):
-        for key in ["teamA","teamB","teamA_pf","teamA_pa","teamB_pf","teamB_pa",
-                    "spread_line","spread_odds","total_line","over_odds","under_odds","stake"]:
-            st.session_state[key] = type(st.session_state[key])() if isinstance(st.session_state[key], str) else 0.0
-        st.experimental_rerun()
-
-    run_projection = st.button("🔮 Run Projection")
+    # Row 5: Buttons side-by-side
+    b1, b2 = st.columns(2)
+    with b1:
+        if st.button("Reset Inputs"):
+            for key in ["teamA","teamB","teamA_pf","teamA_pa","teamB_pf","teamB_pa",
+                        "spread_line","spread_odds","total_line","over_odds","under_odds","stake"]:
+                st.session_state[key] = type(st.session_state[key])() if isinstance(st.session_state[key], str) else 0.0
+            st.experimental_rerun()
+    with b2:
+        run_projection = st.button("🔮 Run Projection")
 
 with col_results:
     st.header("📊 Results")
+
+    if 'run_projection' not in locals():
+        run_projection = False
 
     if run_projection:
         A = st.session_state
@@ -292,3 +307,4 @@ else:
     if st.button("Clear Parlay Slip"):
         st.session_state.parlay_slip = []
         st.experimental_rerun()
+
