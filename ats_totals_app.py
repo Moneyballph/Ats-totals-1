@@ -1,4 +1,4 @@
-# Moneyball Phil — ATS & Totals App (v2.4 with Auto-Volatility)
+# Moneyball Phil — ATS & Totals App (v2.4 Fixed Submit + Projection Favorite)
 # Sports: MLB, NFL, NBA, NCAA Football, NCAA Basketball
 
 import streamlit as st
@@ -96,27 +96,6 @@ def get_sport_sigmas(sport: str) -> tuple[float, float]:
         return 18.0, 14.0
     return 12.0, 10.0
 
-# ---------------- Auto Volatility ----------------
-def auto_volatility(proj_total: float, vegas_total: float, proj_margin: float, vegas_spread: float) -> float:
-    """
-    Determine automatic volatility adjustment based on how close projections are to Vegas lines.
-    Returns 0, 10, or 20 (%).
-    """
-    # Compare projected spread vs Vegas spread
-    spread_gap = abs(proj_margin - vegas_spread)
-    # Compare projected total vs Vegas total
-    total_gap = abs(proj_total - vegas_total)
-
-    # Look at whichever line is tighter (closer to projection)
-    min_gap = min(spread_gap, total_gap)
-
-    if min_gap <= 0.5:
-        return 20.0
-    elif min_gap <= 1.5:
-        return 10.0
-    else:
-        return 0.0
-
 # ---------------- Baseline Model ----------------
 def project_scores_base(sport: str, H_pf: float, H_pa: float, A_pf: float, A_pa: float) -> tuple[float, float]:
     home_pts = (H_pf + A_pa) / 2.0
@@ -207,7 +186,6 @@ def apply_adjustments(
 # ---------------- Sport Selector ----------------
 sport = st.selectbox("Select Sport", ["MLB", "NFL", "NBA", "NCAA Football", "NCAA Basketball"])
 if st.session_state.get("last_sport") != sport:
-    # clear inputs on sport change (keep parlay + results)
     for key in ["home","away","home_pf","home_pa","away_pf","away_pa",
                 "spread_line_home","spread_odds_home","spread_odds_away",
                 "total_line","over_odds","under_odds","stake"]:
@@ -221,7 +199,6 @@ col_inputs, col_results = st.columns([1, 2])
 with col_inputs:
     st.header("📥 Inputs")
 
-    # All inputs in a FORM to prevent auto-reruns
     with st.form("inputs_form", clear_on_submit=False):
         # Row 1: Teams
         n1, n2 = st.columns(2)
@@ -253,13 +230,9 @@ with col_inputs:
 
         so1, so2 = st.columns(2)
         with so1:
-            st.session_state.spread_odds_home = st.number_input(
-                "Home Spread Odds (American)", step=1.0, format="%.0f", value=float(st.session_state.spread_odds_home)
-            )
+            st.session_state.spread_odds_home = st.number_input("Home Spread Odds (American)", step=1.0, format="%.0f", value=float(st.session_state.spread_odds_home))
         with so2:
-            st.session_state.spread_odds_away = st.number_input(
-                "Away Spread Odds (American)", step=1.0, format="%.0f", value=float(st.session_state.spread_odds_away)
-            )
+            st.session_state.spread_odds_away = st.number_input("Away Spread Odds (American)", step=1.0, format="%.0f", value=float(st.session_state.spread_odds_away))
 
         # Row 4: Total + O/U odds + stake
         t_row1, t_row2 = st.columns(2)
@@ -285,7 +258,7 @@ with col_inputs:
                 injury_A_pct = st.number_input("Away injuries (±% PF)", value=0.0, step=1.0, format="%.0f")
             with u3:
                 pace_pct_global = st.number_input("Global pace (±% total)", value=0.0, step=1.0, format="%.0f")
-                variance_pct = st.number_input("Volatility tweak (±% SD, manual override)", value=0.0, step=5.0, format="%.0f")
+                variance_pct = st.number_input("Volatility tweak (±% SD)", value=0.0, step=5.0, format="%.0f")
 
             # Football
             if sport in ["NFL", "NCAA Football"]:
@@ -318,23 +291,19 @@ with col_inputs:
             else:
                 pace_pct_hoops = ortg_H_pct = ortg_A_pct = drtg_H_pct = drtg_A_pct = rest_H_pct = rest_A_pct = 0.0
 
-                       # MLB
+            # MLB
             if sport == "MLB":
                 st.markdown("**MLB specifics**")
-                m1, m2, m3 = st.columns(3)
-                with m1:
+                mlb1, mlb2, mlb3 = st.columns(3)
+                with mlb1:
                     sp_H_runs = st.number_input("SP impact (Home, runs)", value=0.0, step=0.1, format="%.1f")
                     bullpen_H_runs = st.number_input("Bullpen (Home, runs)", value=0.0, step=0.1, format="%.1f")
-                with m2:
+                with mlb2:
                     sp_A_runs = st.number_input("SP impact (Away, runs)", value=0.0, step=0.1, format="%.1f")
                     bullpen_A_runs = st.number_input("Bullpen (Away, runs)", value=0.0, step=0.1, format="%.1f")
-                with m3:
+                with mlb3:
                     park_total_pct = st.number_input("Park factor (±% total)", value=0.0, step=1.0, format="%.0f")
-                    weather_total_pct = st.number_input("Weather (±% total)", value=0.0, step=1.0, format="%.0f")
-            else:
-                sp_H_runs = sp_A_runs = bullpen_H_runs = bullpen_A_runs = 0.0
-                park_total_pct = weather_total_pct = 0.0
-
+                    weather
 
 
 
