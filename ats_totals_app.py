@@ -1,4 +1,4 @@
-# Moneyball Phil — ATS & Totals App (Final Stable v3.3 — Spread Fix + Full Reset)
+# Moneyball Phil — ATS & Totals App (Final Stable v3.3 — Auto Volatility + Bugfix)
 # Sports: MLB, NFL, NBA, NCAA Football, NCAA Basketball
 
 import streamlit as st
@@ -27,29 +27,14 @@ def init_state():
         "stake": 0.0,
         # results / selection
         "selected_bet": None,
+        "selected": None,          # ✅ Fix for AttributeError when reading st.session_state.selected
         "results_df": None,
         "proj_total": None,
         "proj_margin": None,
         "proj_home_pts": None,
         "proj_away_pts": None,
-        # advanced adjustments state so Reset can clear them
-        "auto_volatility": True,
-        "pace_pct_global": 0.0,
-        "variance_pct_manual": 0.0,
-        # universal
-        "home_edge_pts": 0.0, "away_edge_pts": 0.0,
-        "form_H_pct": 0.0, "form_A_pct": 0.0,
-        "injury_H_pct": 0.0, "injury_A_pct": 0.0,
-        # football
-        "plays_pct": 0.0, "redzone_H_pct": 0.0, "redzone_A_pct": 0.0, "to_margin_pts": 0.0,
-        # basketball
-        "pace_pct_hoops": 0.0, "ortg_H_pct": 0.0, "ortg_A_pct": 0.0,
-        "drtg_H_pct": 0.0, "drtg_A_pct": 0.0, "rest_H_pct": 0.0, "rest_A_pct": 0.0,
-        # mlb
-        "sp_H_runs": 0.0, "sp_A_runs": 0.0, "bullpen_H_runs": 0.0, "bullpen_A_runs": 0.0,
-        "park_total_pct": 0.0, "weather_total_pct": 0.0,
-        # for display
-        "auto_vol_used": None, "auto_vol_mode": False,
+        "auto_vol_used": None,
+        "auto_vol_mode": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -96,7 +81,7 @@ def simple_bar(label: str, pct: float):
     )
 
 def _std_norm_cdf(x: float) -> float:
-    # Standard normal CDF for (X <= x)
+    # Standard normal CDF
     return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
 
 def get_sport_sigmas(sport: str):
@@ -109,7 +94,7 @@ def get_sport_sigmas(sport: str):
     return 12.0, 10.0
 
 def suggested_volatility(sport: str) -> float:
-    # Default SD tweak by sport (percent on SD)
+    # Default SD tweak by sport
     mapping = {
         "NFL": 10.0,
         "NCAA Football": 12.0,
@@ -183,13 +168,13 @@ def apply_adjustments(
         H_pts *= total_scale
         A_pts *= total_scale
 
-    # Global pace affects both
+    # Global pace
     if pace_pct_global != 0:
         scale = 1 + pace_pct_global/100.0
         H_pts *= scale
         A_pts *= scale
 
-    # Variance tweak (applies to SD only)
+    # Variance tweak
     sd_total *= (1 + variance_pct/100.0)
     sd_margin *= (1 + variance_pct/100.0)
 
@@ -201,16 +186,10 @@ sport = st.selectbox("Select Sport", ["MLB", "NFL", "NBA", "NCAA Football", "NCA
 if st.session_state.get("last_sport") != sport:
     for key in ["home","away","home_pf","home_pa","away_pf","away_pa",
                 "spread_line_home","spread_odds_home","spread_odds_away",
-                "total_line","over_odds","under_odds","stake",
-                "home_edge_pts","away_edge_pts","form_H_pct","form_A_pct",
-                "injury_H_pct","injury_A_pct","pace_pct_global","variance_pct_manual",
-                "plays_pct","redzone_H_pct","redzone_A_pct","to_margin_pts",
-                "pace_pct_hoops","ortg_H_pct","ortg_A_pct","drtg_H_pct","drtg_A_pct",
-                "rest_H_pct","rest_A_pct",
-                "sp_H_runs","sp_A_runs","bullpen_H_runs","bullpen_A_runs",
-                "park_total_pct","weather_total_pct"]:
-        st.session_state[key] = "" if isinstance(st.session_state[key], str) and key in ["home","away"] else 0.0
+                "total_line","over_odds","under_odds","stake"]:
+        st.session_state[key] = type(st.session_state[key])() if isinstance(st.session_state[key], str) else 0.0
     st.session_state["selected_bet"] = None
+    st.session_state["selected"] = None         # ✅ also reset
     st.session_state["last_sport"] = sport
 
 # ---------------- Layout ----------------
@@ -219,6 +198,7 @@ col_inputs, col_results = st.columns([1, 2])
 with col_inputs:
     st.header("📥 Inputs")
 
+    # Default to avoid UnboundLocal
     reset_clicked = False
     run_projection = False
 
@@ -275,17 +255,18 @@ with col_inputs:
             st.markdown("**Universal**")
             u1, u2, u3 = st.columns(3)
             with u1:
-                st.session_state.home_edge_pts = st.number_input("Home edge (pts)", value=float(st.session_state.home_edge_pts), step=0.25, format="%.2f")
-                st.session_state.form_H_pct = st.number_input("Home form (±% PF)", value=float(st.session_state.form_H_pct), step=1.0, format="%.0f")
-                st.session_state.injury_H_pct = st.number_input("Home injuries (±% PF)", value=float(st.session_state.injury_H_pct), step=1.0, format="%.0f")
+                home_edge_pts = st.number_input("Home edge (pts)", value=0.0, step=0.25, format="%.2f")
+                form_H_pct = st.number_input("Home form (±% PF)", value=0.0, step=1.0, format="%.0f")
+                injury_H_pct = st.number_input("Home injuries (±% PF)", value=0.0, step=1.0, format="%.0f")
             with u2:
-                st.session_state.away_edge_pts = st.number_input("Away edge (pts)", value=float(st.session_state.away_edge_pts), step=0.25, format="%.2f")
-                st.session_state.form_A_pct = st.number_input("Away form (±% PF)", value=float(st.session_state.form_A_pct), step=1.0, format="%.0f")
-                st.session_state.injury_A_pct = st.number_input("Away injuries (±% PF)", value=float(st.session_state.injury_A_pct), step=1.0, format="%.0f")
+                away_edge_pts = st.number_input("Away edge (pts)", value=0.0, step=0.25, format="%.2f")
+                form_A_pct = st.number_input("Away form (±% PF)", value=0.0, step=1.0, format="%.0f")
+                injury_A_pct = st.number_input("Away injuries (±% PF)", value=0.0, step=1.0, format="%.0f")
             with u3:
-                st.session_state.auto_volatility = st.checkbox("Auto volatility by sport", value=bool(st.session_state.auto_volatility))
-                st.session_state.pace_pct_global = st.number_input("Global pace (±% total)", value=float(st.session_state.pace_pct_global), step=1.0, format="%.0f")
-                st.session_state.variance_pct_manual = st.number_input("Volatility tweak (±% SD)", value=float(st.session_state.variance_pct_manual), step=5.0, format="%.0f",
+                # NEW: auto volatility toggle + manual number; we’ll resolve to effective value when running
+                auto_volatility = st.checkbox("Auto volatility by sport", value=True)
+                pace_pct_global = st.number_input("Global pace (±% total)", value=0.0, step=1.0, format="%.0f")
+                variance_pct_manual = st.number_input("Volatility tweak (±% SD)", value=0.0, step=5.0, format="%.0f",
                                                       help="Ignored when 'Auto volatility by sport' is ON")
 
             # Football
@@ -293,61 +274,48 @@ with col_inputs:
                 st.markdown("**Football specifics**")
                 f1, f2, f3 = st.columns(3)
                 with f1:
-                    st.session_state.plays_pct = st.number_input("Plays/pace (±% total)", value=float(st.session_state.plays_pct), step=1.0, format="%.0f")
-                    st.session_state.to_margin_pts = st.number_input("Turnover margin (pts to Home)", value=float(st.session_state.to_margin_pts), step=0.5, format="%.2f")
+                    plays_pct = st.number_input("Plays/pace (±% total)", value=0.0, step=1.0, format="%.0f")
+                    to_margin_pts = st.number_input("Turnover margin (pts to Home)", value=0.0, step=0.5, format="%.2f")
                 with f2:
-                    st.session_state.redzone_H_pct = st.number_input("Home red zone (±% PF)", value=float(st.session_state.redzone_H_pct), step=1.0, format="%.0f")
+                    redzone_H_pct = st.number_input("Home red zone (±% PF)", value=0.0, step=1.0, format="%.0f")
                 with f3:
-                    st.session_state.redzone_A_pct = st.number_input("Away red zone (±% PF)", value=float(st.session_state.redzone_A_pct), step=1.0, format="%.0f")
+                    redzone_A_pct = st.number_input("Away red zone (±% PF)", value=0.0, step=1.0, format="%.0f")
             else:
-                st.session_state.plays_pct = 0.0
-                st.session_state.redzone_H_pct = 0.0
-                st.session_state.redzone_A_pct = 0.0
-                st.session_state.to_margin_pts = 0.0
+                plays_pct = redzone_H_pct = redzone_A_pct = to_margin_pts = 0.0
 
             # Basketball
             if sport in ["NBA", "NCAA Basketball"]:
                 st.markdown("**Basketball specifics**")
                 b1, b2, b3 = st.columns(3)
                 with b1:
-                    st.session_state.pace_pct_hoops = st.number_input("Pace (±% total)", value=float(st.session_state.pace_pct_hoops), step=1.0, format="%.0f")
-                    st.session_state.rest_H_pct = st.number_input("Home rest/fatigue (±% PF)", value=float(st.session_state.rest_H_pct), step=1.0, format="%.0f")
+                    pace_pct_hoops = st.number_input("Pace (±% total)", value=0.0, step=1.0, format="%.0f")
+                    rest_H_pct = st.number_input("Home rest/fatigue (±% PF)", value=0.0, step=1.0, format="%.0f")
                 with b2:
-                    st.session_state.ortg_H_pct = st.number_input("Home ORtg (±% PF)", value=float(st.session_state.ortg_H_pct), step=1.0, format="%.0f")
-                    st.session_state.rest_A_pct = st.number_input("Away rest/fatigue (±% PF)", value=float(st.session_state.rest_A_pct), step=1.0, format="%.0f")
+                    ortg_H_pct = st.number_input("Home ORtg (±% PF)", value=0.0, step=1.0, format="%.0f")
+                    rest_A_pct = st.number_input("Away rest/fatigue (±% PF)", value=0.0, step=1.0, format="%.0f")
                 with b3:
-                    st.session_state.ortg_A_pct = st.number_input("Away ORtg (±% PF)", value=float(st.session_state.ortg_A_pct), step=1.0, format="%.0f")
-                    st.session_state.drtg_H_pct = st.number_input("Home DRtg (±% opp PF)", value=float(st.session_state.drtg_H_pct), step=1.0, format="%.0f")
-                st.session_state.drtg_A_pct = st.number_input("Away DRtg (±% opp PF)", value=float(st.session_state.drtg_A_pct), step=1.0, format="%.0f")
+                    ortg_A_pct = st.number_input("Away ORtg (±% PF)", value=0.0, step=1.0, format="%.0f")
+                    drtg_H_pct = st.number_input("Home DRtg (±% opp PF)", value=0.0, step=1.0, format="%.0f")
+                drtg_A_pct = st.number_input("Away DRtg (±% opp PF)", value=0.0, step=1.0, format="%.0f")
             else:
-                st.session_state.pace_pct_hoops = 0.0
-                st.session_state.ortg_H_pct = 0.0
-                st.session_state.ortg_A_pct = 0.0
-                st.session_state.drtg_H_pct = 0.0
-                st.session_state.drtg_A_pct = 0.0
-                st.session_state.rest_H_pct = 0.0
-                st.session_state.rest_A_pct = 0.0
+                pace_pct_hoops = ortg_H_pct = ortg_A_pct = drtg_H_pct = drtg_A_pct = rest_H_pct = rest_A_pct = 0.0
 
             # MLB
             if sport == "MLB":
                 st.markdown("**MLB specifics**")
                 m1, m2, m3 = st.columns(3)
                 with m1:
-                    st.session_state.sp_H_runs = st.number_input("SP impact (Home, runs)", value=float(st.session_state.sp_H_runs), step=0.1, format="%.1f")
-                    st.session_state.bullpen_H_runs = st.number_input("Bullpen (Home, runs)", value=float(st.session_state.bullpen_H_runs), step=0.1, format="%.1f")
+                    sp_H_runs = st.number_input("SP impact (Home, runs)", value=0.0, step=0.1, format="%.1f")
+                    bullpen_H_runs = st.number_input("Bullpen (Home, runs)", value=0.0, step=0.1, format="%.1f")
                 with m2:
-                    st.session_state.sp_A_runs = st.number_input("SP impact (Away, runs)", value=float(st.session_state.sp_A_runs), step=0.1, format="%.1f")
-                    st.session_state.bullpen_A_runs = st.number_input("Bullpen (Away, runs)", value=float(st.session_state.bullpen_A_runs), step=0.1, format="%.1f")
+                    sp_A_runs = st.number_input("SP impact (Away, runs)", value=0.0, step=0.1, format="%.1f")
+                    bullpen_A_runs = st.number_input("Bullpen (Away, runs)", value=0.0, step=0.1, format="%.1f")
                 with m3:
-                    st.session_state.park_total_pct = st.number_input("Park factor (±% total)", value=float(st.session_state.park_total_pct), step=1.0, format="%.0f")
-                    st.session_state.weather_total_pct = st.number_input("Weather (±% total)", value=float(st.session_state.weather_total_pct), step=1.0, format="%.0f")
+                    park_total_pct = st.number_input("Park factor (±% total)", value=0.0, step=1.0, format="%.0f")
+                    weather_total_pct = st.number_input("Weather (±% total)", value=0.0, step=1.0, format="%.0f")
             else:
-                st.session_state.sp_H_runs = 0.0
-                st.session_state.sp_A_runs = 0.0
-                st.session_state.bullpen_H_runs = 0.0
-                st.session_state.bullpen_A_runs = 0.0
-                st.session_state.park_total_pct = 0.0
-                st.session_state.weather_total_pct = 0.0
+                sp_H_runs = sp_A_runs = bullpen_H_runs = bullpen_A_runs = 0.0
+                park_total_pct = weather_total_pct = 0.0
 
         # Form actions
         cbtn1, cbtn2 = st.columns(2)
@@ -356,31 +324,14 @@ with col_inputs:
         with cbtn2:
             run_projection = st.form_submit_button("🔮 Run Projection")
 
-    # Reset after the form (clears EVERYTHING)
+    # Reset after the form
     if reset_clicked:
-        reset_keys = [
-            # Teams & averages
-            "home","away","home_pf","home_pa","away_pf","away_pa",
-            # Spread / odds
-            "spread_line_home","spread_odds_home","spread_odds_away",
-            # Totals / odds / stake
-            "total_line","over_odds","under_odds","stake",
-            # Universal adjustments
-            "home_edge_pts","away_edge_pts","form_H_pct","form_A_pct",
-            "injury_H_pct","injury_A_pct","pace_pct_global","variance_pct_manual",
-            # Football
-            "plays_pct","redzone_H_pct","redzone_A_pct","to_margin_pts",
-            # Basketball
-            "pace_pct_hoops","ortg_H_pct","ortg_A_pct","drtg_H_pct","drtg_A_pct",
-            "rest_H_pct","rest_A_pct",
-            # MLB
-            "sp_H_runs","sp_A_runs","bullpen_H_runs","bullpen_A_runs",
-            "park_total_pct","weather_total_pct"
-        ]
-        for key in reset_keys:
-            if key in st.session_state:
-                st.session_state[key] = "" if key in ["home","away"] else 0.0
+        for key in ["home","away","home_pf","home_pa","away_pf","away_pa",
+                    "spread_line_home","spread_odds_home","spread_odds_away",
+                    "total_line","over_odds","under_odds","stake"]:
+            st.session_state[key] = type(st.session_state[key])() if isinstance(st.session_state[key], str) else 0.0
         st.session_state.selected_bet = None
+        st.session_state.selected = None      # ✅ also reset
         st.stop()
 
 with col_results:
@@ -394,20 +345,20 @@ with col_results:
         home_pts, away_pts = project_scores_base(sport, S.home_pf, S.home_pa, S.away_pf, S.away_pa)
 
         # Resolve effective volatility
-        auto_vol_used = suggested_volatility(sport) if S.auto_volatility else float(S.variance_pct_manual)
+        auto_vol_used = suggested_volatility(sport) if auto_volatility else float(variance_pct_manual)
 
         # Apply adjustments
         home_pts, away_pts, sd_total, sd_margin = apply_adjustments(
             sport, home_pts, away_pts,
             # universal
-            S.home_edge_pts, S.away_edge_pts, S.form_H_pct, S.form_A_pct,
-            S.injury_H_pct, S.injury_A_pct, S.pace_pct_global, auto_vol_used,
+            home_edge_pts, away_edge_pts, form_H_pct, form_A_pct,
+            injury_H_pct, injury_A_pct, pace_pct_global, auto_vol_used,
             # football
-            S.plays_pct, S.redzone_H_pct, S.redzone_A_pct, S.to_margin_pts,
+            plays_pct, redzone_H_pct, redzone_A_pct, to_margin_pts,
             # basketball
-            S.pace_pct_hoops, S.ortg_H_pct, S.ortg_A_pct, S.drtg_H_pct, S.drtg_A_pct, S.rest_H_pct, S.rest_A_pct,
+            pace_pct_hoops, ortg_H_pct, ortg_A_pct, drtg_H_pct, drtg_A_pct, rest_H_pct, rest_A_pct,
             # mlb
-            S.sp_H_runs, S.sp_A_runs, S.bullpen_H_runs, S.bullpen_A_runs, S.park_total_pct, S.weather_total_pct
+            sp_H_runs, sp_A_runs, bullpen_H_runs, bullpen_A_runs, park_total_pct, weather_total_pct
         )
 
         proj_total = home_pts + away_pts
@@ -415,26 +366,18 @@ with col_results:
 
         rows = []
 
-        # ---------------- SPREAD (FIXED) ----------------
-        # Interpret "Home spread" line L_home as the number added to Home (negative if favorite).
-        # If L_home = -1.5, then Home covers when Margin >= +1.5  --> threshold_home = -L_home
-        L_home = float(S.spread_line_home)
-        threshold_home = -L_home
-
-        # Home spread probability: P(Margin >= threshold_home)
-        z_home = (proj_margin - threshold_home) / sd_margin if sd_margin > 0 else 0.0
-        true_home = _std_norm_cdf(z_home) * 100.0
+        # Spread (home)
+        z_spread_home = (proj_margin - S.spread_line_home) / sd_margin if sd_margin > 0 else 0.0
+        true_home = _std_norm_cdf(z_spread_home) * 100.0
         ev_home, impl_home = calculate_ev_pct(true_home, S.spread_odds_home)
         tier_home, _ = tier_by_true_prob(true_home)
         rows.append([f"{S.home} {S.spread_line_home:+.2f}", S.spread_odds_home, true_home, impl_home, ev_home, tier_home])
 
-        # Away spread is the opposite line (+/-), covering when Margin <= L_home
-        z_away = (L_home - proj_margin) / sd_margin if sd_margin > 0 else 0.0
-        true_away = _std_norm_cdf(z_away) * 100.0
+        # Spread (away)
+        true_away = max(0.0, 100.0 - true_home)
         ev_away, impl_away = calculate_ev_pct(true_away, S.spread_odds_away)
         tier_away, _ = tier_by_true_prob(true_away)
         rows.append([f"{S.away} {(-S.spread_line_home):+.2f}", S.spread_odds_away, true_away, impl_away, ev_away, tier_away])
-        # ------------------------------------------------
 
         # Totals
         z_total_over = (proj_total - S.total_line) / sd_total if sd_total > 0 else 0.0
@@ -455,7 +398,7 @@ with col_results:
         st.session_state.proj_home_pts = home_pts
         st.session_state.proj_away_pts = away_pts
         st.session_state.auto_vol_used = auto_vol_used
-        st.session_state.auto_vol_mode = bool(S.auto_volatility)
+        st.session_state.auto_vol_mode = bool(auto_volatility)
 
     # Show results if available
     if st.session_state.results_df is not None:
@@ -483,7 +426,124 @@ with col_results:
 
         # Keep a stable selection
         if st.session_state.selected_bet is None and len(df) > 0:
-            st.session_state.selected
+            st.session_state.selected_bet = df["Bet Type"].iloc[0]
+
+        choice = st.selectbox("Select a bet to save/add to slip:", options=list(df["Bet Type"]), key="selected_bet")
+        selected = df[df["Bet Type"] == st.session_state.selected_bet].iloc[0]
+
+        # Bet details
+        st.markdown("### Bet Details")
+        tier_name, tier_color = tier_by_true_prob(float(selected["True %"]))
+        st.markdown(tier_badge_html(tier_name, tier_color), unsafe_allow_html=True)
+        simple_bar("True Probability", selected["True %"])
+        simple_bar("Implied Probability", selected["Implied %"])
+        simple_bar("EV%", selected["EV %"])
+
+        colA, colB = st.columns(2)
+        with colA:
+            save_straight = st.button("💾 Save Straight Bet", key="save_straight_btn")
+        with colB:
+            add_parlay = st.button("➕ Send to Parlay Slip", key="add_parlay_btn")
+
+        if save_straight:
+            st.success("✅ Bet saved (copy row below to your tracker).")
+            st.code(
+                f"{datetime.date.today()}, Straight, {selected['Bet Type']}, "
+                f"{int(selected['Odds'])}, {selected['True %']:.1f}%, {selected['Implied %']:.1f}%, "
+                f"{S.stake:.2f}, W/L, +/-$, {selected['EV %']:.1f}%, Cumulative, ROI%"
+            )
+
+        if add_parlay:
+            st.session_state.parlay_slip.append([
+                selected["Bet Type"],
+                int(selected["Odds"]),
+                float(selected["True %"]),
+                float(selected["Implied %"]),
+                float(selected["EV %"]),
+                tier_name
+            ])
+            st.success(f"➕ Added to parlay slip: {selected['Bet Type']}")
+
+# ---------------- Parlay Slip ----------------
+st.markdown("---")
+st.subheader("🧾 Parlay Slip")
+
+if len(st.session_state.parlay_slip) == 0:
+    st.info("No legs yet. Run a projection, select a bet, and choose **Send to Parlay Slip**.")
+else:
+    slip_df = pd.DataFrame(
+        st.session_state.parlay_slip,
+        columns=["Bet Type", "Odds", "True %", "Implied %", "EV %", "Tier"]
+    )
+    st.dataframe(slip_df, use_container_width=True)
+
+    # --- Combined metrics from legs (auto) ---
+    def _american_to_decimal(odds: float) -> float:
+        return 1 + (odds / 100) if odds > 0 else 1 + (100 / abs(odds))
+
+    def _american_to_implied_pct(odds: float) -> float:
+        return (100 / (odds + 100)) * 100 if odds > 0 else (abs(odds) / (abs(odds) + 100)) * 100
+
+    dec_product = 1.0
+    true_prod = 1.0
+    implied_prod = 1.0
+    for leg in st.session_state.parlay_slip:
+        leg_odds = int(leg[1])
+        dec_product *= _american_to_decimal(leg_odds)
+        true_prod *= float(leg[2]) / 100.0
+        implied_prod *= float(leg[3]) / 100.0
+
+    combined_true_pct = true_prod * 100.0
+    combined_implied_pct = implied_prod * 100.0  # from legs’ implied %
+    auto_american = (dec_product - 1) * 100 if dec_product >= 2 else -100 / (dec_product - 1)
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Auto Combined Odds (American)", f"{auto_american:.0f}")
+    c2.metric("Auto Combined Odds (Decimal)", f"{dec_product:.2f}")
+    c3.metric("Parlay True Probability", f"{combined_true_pct:.1f}%")
+    c4.metric("Legs’ Implied Probability", f"{combined_implied_pct:.1f}%")
+
+    # Tier from true probability (unchanged)
+    tier_name, tier_color = tier_by_true_prob(combined_true_pct)
+    st.markdown(tier_badge_html(f"Parlay Tier: {tier_name}", tier_color), unsafe_allow_html=True)
+    simple_bar("Parlay True Probability", combined_true_pct)
+
+    # --- Book parlay odds override (optional) ---
+    st.markdown("### Book Parlay Odds (optional)")
+    colA, colB, colC = st.columns([1.2, 1.2, 2])
+    with colA:
+        manual_parlay_odds = st.number_input(
+            "Book Parlay Odds (American)",
+            value=0, step=1, help="Enter the sportsbook's parlay price (e.g., +650 or -120). Leave 0 to ignore."
+        )
+    with colB:
+        if manual_parlay_odds != 0:
+            manual_parlay_dec = _american_to_decimal(manual_parlay_odds)
+            st.metric("Book Parlay Odds (Decimal)", f"{manual_parlay_dec:.2f}")
+        else:
+            st.write(" ")
+
+    if manual_parlay_odds != 0:
+        book_implied_pct = _american_to_implied_pct(manual_parlay_odds)
+        ev_vs_book = combined_true_pct - book_implied_pct
+        with colC:
+            st.metric("Book Implied Probability", f"{book_implied_pct:.1f}%")
+        simple_bar("EV% vs Book", ev_vs_book)
+        st.caption("EV% vs Book = True Parlay % − Book Implied %")
+    else:
+        st.caption("Enter Book Parlay Odds above to compute EV vs. book price.")
+
+    # --- Manage slip ---
+    st.markdown("### Manage Parlay")
+    rm_leg = st.selectbox("Remove a leg (optional):", options=["—"] + [r[0] for r in st.session_state.parlay_slip])
+    if rm_leg != "—":
+        st.session_state.parlay_slip = [leg for leg in st.session_state.parlay_slip if leg[0] != rm_leg]
+        st.success(f"Removed: {rm_leg}")
+
+    if st.button("Clear Parlay Slip"):
+        st.session_state.parlay_slip = []
+        st.success("Parlay slip cleared.")
+
 
 
 
