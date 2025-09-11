@@ -366,18 +366,26 @@ with col_results:
 
         rows = []
 
-        # Spread (home)
-        z_spread_home = (proj_margin - S.spread_line_home) / sd_margin if sd_margin > 0 else 0.0
-        true_home = _std_norm_cdf(z_spread_home) * 100.0
+                # Spread (home)
+        if S.spread_line_home < 0:  # Home is favorite, e.g. -1.5
+            # Probability home team wins by at least |spread|
+            z_spread_home = (proj_margin - abs(S.spread_line_home)) / sd_margin if sd_margin > 0 else 0.0
+            true_home = _std_norm_cdf(z_spread_home) * 100.0
+        else:  # Home is underdog, e.g. +1.5
+            # Probability home team loses by less than spread (or wins outright)
+            z_spread_home = (proj_margin + abs(S.spread_line_home)) / sd_margin if sd_margin > 0 else 0.0
+            true_home = _std_norm_cdf(z_spread_home) * 100.0
+
         ev_home, impl_home = calculate_ev_pct(true_home, S.spread_odds_home)
         tier_home, _ = tier_by_true_prob(true_home)
         rows.append([f"{S.home} {S.spread_line_home:+.2f}", S.spread_odds_home, true_home, impl_home, ev_home, tier_home])
 
-        # Spread (away)
-        true_away = max(0.0, 100.0 - true_home)
+        # Spread (away is always opposite of home)
+        true_away = 100.0 - true_home
         ev_away, impl_away = calculate_ev_pct(true_away, S.spread_odds_away)
         tier_away, _ = tier_by_true_prob(true_away)
         rows.append([f"{S.away} {(-S.spread_line_home):+.2f}", S.spread_odds_away, true_away, impl_away, ev_away, tier_away])
+
 
         # Totals
         z_total_over = (proj_total - S.total_line) / sd_total if sd_total > 0 else 0.0
